@@ -1,0 +1,3 @@
+zig-out/
+build/
+zig-cache/
