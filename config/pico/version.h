@@ -1,4 +1,5 @@
 // This file should look something like this:
+// version.h seems not strictly necessary
 
 /*
  * Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
