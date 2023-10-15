@@ -2,9 +2,11 @@ const std = @import("std");
 
 const Board = "pico_w";
 
+// RP2040 -- This includes a specific header file.
+const IsRP2040 = true;
+
 // Choose whether Stdio goes to USB or UART
 const StdioUsb = true;
-
 const PicoStdlibDefine = if (StdioUsb) "LIB_PICO_STDIO_USB" else "LIB_PICO_STDIO_UART"; 
 
 pub fn build(b: *std.Build) anyerror!void {
@@ -33,6 +35,34 @@ pub fn build(b: *std.Build) anyerror!void {
     // default arm-none-eabi includes
     lib.linkLibC();
     lib.addSystemIncludePath(.{.path = "/usr/arm-none-eabi/include"});
+
+    // find the board header
+    const board_header = try blk: {
+        const boards_directory_path = try std.fmt.allocPrint(b.allocator, "{s}/src/boards/include/boards/", .{pico_sdk_path});
+        var boards_dir = try std.fs.cwd().openIterableDir(boards_directory_path, .{});
+        defer boards_dir.close();
+        
+        var it = boards_dir.iterate();
+        while (try it.next()) |file| {
+            if (std.mem.containsAtLeast(u8, file.name, 1, Board)) {
+                // found the board header
+                break :blk file.name;
+            }    
+        }
+        break :blk error.BoardHeaderNotFound;
+    };
+
+    // Autogenerate the header file like the pico sdk would
+    const cmsys_exception_prefix = if (IsRP2040) "" else "//";
+    const header_str = try std.fmt.allocPrint(b.allocator, 
+    \\#include "{s}/src/boards/include/boards/{s}"
+    \\{s}#include "{s}/src/rp2_common/cmsis/include/cmsis/rename_exceptions.h"
+    ,.{pico_sdk_path, board_header, cmsys_exception_prefix, pico_sdk_path});
+    
+    // Write and include the generated header
+    const config_autogen_step = b.addWriteFile("pico/config_autogen.h", header_str);
+    lib.step.dependOn(&config_autogen_step.step);
+    lib.addIncludePath(config_autogen_step.getDirectory());
 
     // requires running cmake at least once
     lib.addSystemIncludePath(.{.path = "build/generated/pico_base"});
