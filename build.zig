@@ -1,14 +1,15 @@
 const std = @import("std");
 
-const PicoBoard = "-DPICO_BOARD=pico_w";
-// Although this function looks imperative, note that its job is to
-// declaratively construct a build graph that will be executed by an external
-// runner.
+const Board = "pico_w";
+
+// Choose whether Stdio goes to USB or UART
+const StdioUsb = true;
+
+const PicoStdlibDefine = if (StdioUsb) "LIB_PICO_STDIO_USB" else "LIB_PICO_STDIO_UART"; 
+
 pub fn build(b: *std.Build) anyerror!void {
-    // Standard target options allows the person running `zig build` to choose
-    // what target to build for. Here we do not override the defaults, which
-    // means any target is allowed, and the default is native. Other options
-    // for restricting supported target set are available.
+    
+    // ------------------
     const target = std.zig.CrossTarget{
         .abi = .eabi,
         .cpu_arch = .thumb,
@@ -16,16 +17,11 @@ pub fn build(b: *std.Build) anyerror!void {
         .os_tag = .freestanding,
     };
 
-    // Standard optimization options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
-    // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
 
     const lib = b.addObject(.{
         .name = "zig-pico",
-        // In this case the main source file is merely a path, however, in more
-        // complicated build scripts, this could be a generated file.
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = optimize,
@@ -48,11 +44,21 @@ pub fn build(b: *std.Build) anyerror!void {
     const find_argv = [_][]const u8{"find", pico_sdk_src, "-type", "d", "-name", "include"};
     const directories = b.exec(&find_argv);
     var splits = std.mem.splitSequence(u8, directories, "\n");
+
+    // Define UART or USB constant for headers
+    lib.defineCMacroRaw(PicoStdlibDefine);
+
     while (splits.next()) |include_dir| {
+        // filter host headers
+        if (std.mem.containsAtLeast(u8, include_dir, 1, "src/host")) {
+            continue;
+        }
+
         lib.addIncludePath(std.build.LazyPath{.path = include_dir});
     }
 
     // required for pico_w wifi
+    lib.defineCMacroRaw("PICO_CYW43_ARCH_THREADSAFE_BACKGROUND");
     const cyw43_include = try std.fmt.allocPrint(b.allocator, "{s}/lib/cyw43-driver/src", .{pico_sdk_path});
     lib.addIncludePath(.{ .path = cyw43_include});
     
@@ -63,10 +69,6 @@ pub fn build(b: *std.Build) anyerror!void {
     // options headers
     lib.addIncludePath(.{ .path = "config/"});
 
-    // This declares intent for the library to be installed into the standard
-    // location when the user invokes the "install" step (the default step when
-    // running `zig build`).
-    // b.installArtifact(lib);
     const compiled = lib.getEmittedBin();
     const install_step = b.addInstallFile(compiled, "mlem.o");
     install_step.step.dependOn(&lib.step);
@@ -76,7 +78,8 @@ pub fn build(b: *std.Build) anyerror!void {
         if (err != error.PathAlreadyExists) return err;
     }
 
-    const cmake_argv = [_][]const u8{"cmake", "-B", "./build", "-S .", PicoBoard};
+    const uart_or_usb = if (StdioUsb) "-DSTDIO_USB=1" else "-DSTDIO_UART=1";
+    const cmake_argv = [_][]const u8{"cmake", "-B", "./build", "-S .", "-DPICO_BOARD=" ++ Board, uart_or_usb};
     const cmake_step = b.addSystemCommand(&cmake_argv);
     cmake_step.step.dependOn(&install_step.step);
 

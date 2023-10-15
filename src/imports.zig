@@ -1,5 +1,5 @@
 pub const p = @cImport({
-    @cDefine("PICO_CYW43_ARCH_THREADSAFE_BACKGROUND", "1");
+    @cInclude("stdio.h");
     @cInclude("pico/stdlib.h");
     @cInclude("pico/cyw43_arch.h");
     @cInclude("hardware/gpio.h");
