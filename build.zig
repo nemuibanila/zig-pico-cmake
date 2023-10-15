@@ -113,7 +113,10 @@ pub fn build(b: *std.Build) anyerror!void {
     const cmake_step = b.addSystemCommand(&cmake_argv);
     cmake_step.step.dependOn(&install_step.step);
 
-    const make_argv = [_][]const u8{"make", "-C", "./build"};
+    const threads = try std.Thread.getCpuCount();
+    const make_thread_arg = try std.fmt.allocPrint(b.allocator, "-j{d}", .{threads});
+
+    const make_argv = [_][]const u8{"make", "-C", "./build", make_thread_arg};
     const make_step = b.addSystemCommand(&make_argv);
     make_step.step.dependOn(&cmake_step.step);
 
