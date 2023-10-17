@@ -1,9 +1,5 @@
 cmake_minimum_required(VERSION 3.27)
 
-
-# Path to Pico SDK
-set(PICO_SDK_PATH $ENV{PICO_SDK_PATH})
-
 # Initialize the Pico SDK
 include(${PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 project(mlem)

@@ -132,7 +132,8 @@ pub fn build(b: *std.Build) anyerror!void {
     }
 
     const uart_or_usb = if (StdioUsb) "-DSTDIO_USB=1" else "-DSTDIO_UART=1";
-    const cmake_argv = [_][]const u8{"cmake", "-B", "./build", "-S .", "-DPICO_BOARD=" ++ Board, uart_or_usb};
+    const cmake_pico_sdk_path = b.fmt("-DPICO_SDK_PATH={s}", .{pico_sdk_path});
+    const cmake_argv = [_][]const u8{"cmake", "-B", "./build", "-S .", "-DPICO_BOARD=" ++ Board,cmake_pico_sdk_path ,uart_or_usb};
     const cmake_step = b.addSystemCommand(&cmake_argv);
     cmake_step.step.dependOn(&install_step.step);
 
