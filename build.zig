@@ -9,6 +9,9 @@ const IsRP2040 = true;
 const StdioUsb = true;
 const PicoStdlibDefine = if (StdioUsb) "LIB_PICO_STDIO_USB" else "LIB_PICO_STDIO_UART"; 
 
+// Pico SDK path can be specified here for your convenience
+const PicoSDKPath: ?[]const u8 = null;
+
 pub fn build(b: *std.Build) anyerror!void {
     
     // ------------------
@@ -28,17 +31,36 @@ pub fn build(b: *std.Build) anyerror!void {
         .target = target,
         .optimize = optimize,
     });
-
-    const pico_sdk_path = std.os.getenv("PICO_SDK_PATH") orelse return error.PicoSDKEnvNotSet;
-    std.debug.print("{s}\n", .{pico_sdk_path});
+    
+    // get and perform basic verification on the pico sdk path
+    // if the sdk path contains the pico_sdk_init.cmake file then we know its correct
+    const pico_sdk_path = 
+        if(PicoSDKPath) |sdk_path| sdk_path
+        else std.os.getenv("PICO_SDK_PATH") 
+            orelse {
+                std.log.err("The Pico SDK path must be set either through the PICO_SDK_PATH environment variable or at the top of build.zig.");
+                return; 
+            };    
+    
+    const pico_init_cmake_path = b.pathJoin(&.{pico_sdk_path, "pico_sdk_init.cmake"});
+    std.fs.cwd().access(pico_init_cmake_path, .{}) catch {
+        std.log.err(
+            \\Provided Pico SDK path does not contain the file pico_sdk_init.cmake
+            \\Tried: {s}
+            \\Are you sure you entered the path correctly?"
+            , .{pico_init_cmake_path});
+        return;
+    };
 
     // default arm-none-eabi includes
     lib.linkLibC();
     lib.addSystemIncludePath(.{.path = "/usr/arm-none-eabi/include"});
 
+    const find = try b.findProgram(&.{"find"}, &.{});
+
     // find the board header
-    const board_header = try blk: {
-        const boards_directory_path = try std.fmt.allocPrint(b.allocator, "{s}/src/boards/include/boards/", .{pico_sdk_path});
+    const board_header = blk: {
+        const boards_directory_path = b.pathJoin(&.{pico_sdk_path, "src/boards/include/boards/"});
         var boards_dir = try std.fs.cwd().openIterableDir(boards_directory_path, .{});
         defer boards_dir.close();
         
@@ -49,7 +71,8 @@ pub fn build(b: *std.Build) anyerror!void {
                 break :blk file.name;
             }    
         }
-        break :blk error.BoardHeaderNotFound;
+        std.log.err("Could not find the header file for board '{s}'\n", .{Board});
+        return;
     };
 
     // Autogenerate the header file like the pico sdk would
@@ -71,7 +94,7 @@ pub fn build(b: *std.Build) anyerror!void {
     const pico_sdk_src = try std.fmt.allocPrint(b.allocator, "{s}/src", .{pico_sdk_path});
     //  -type d -name include"
     // find all folders called include in the Pico SDK
-    const find_argv = [_][]const u8{"find", pico_sdk_src, "-type", "d", "-name", "include"};
+    const find_argv = [_][]const u8{find, pico_sdk_src, "-type", "d", "-name", "include"};
     const directories = b.exec(&find_argv);
     var splits = std.mem.splitSequence(u8, directories, "\n");
 
@@ -120,9 +143,10 @@ pub fn build(b: *std.Build) anyerror!void {
     const make_step = b.addSystemCommand(&make_argv);
     make_step.step.dependOn(&cmake_step.step);
 
-    const uf2_step = b.addInstallFile(.{.path = "build/mlem.uf2"}, "firmware.uf2");
-    uf2_step.step.dependOn(&make_step.step);
+    const uf2_create_step = b.addInstallFile(.{.path = "build/mlem.uf2"}, "firmware.uf2");
+    uf2_create_step.step.dependOn(&make_step.step);
 
-    b.default_step.dependOn(&uf2_step.step);
-
+    const uf2_step = b.step("uf2", "Create firmware.uf2");
+    uf2_step.dependOn(&uf2_create_step.step);
+    b.default_step = uf2_step;
 }
