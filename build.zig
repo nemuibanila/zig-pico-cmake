@@ -38,7 +38,7 @@ pub fn build(b: *std.Build) anyerror!void {
         if(PicoSDKPath) |sdk_path| sdk_path
         else std.os.getenv("PICO_SDK_PATH") 
             orelse {
-                std.log.err("The Pico SDK path must be set either through the PICO_SDK_PATH environment variable or at the top of build.zig.");
+                std.log.err("The Pico SDK path must be set either through the PICO_SDK_PATH environment variable or at the top of build.zig.", .{});
                 return; 
             };    
     
