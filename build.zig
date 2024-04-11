@@ -12,6 +12,10 @@ const PicoStdlibDefine = if (StdioUsb) "LIB_PICO_STDIO_USB" else "LIB_PICO_STDIO
 // Pico SDK path can be specified here for your convenience
 const PicoSDKPath: ?[]const u8 = null;
 
+// arm-none-eabi toolchain path may be specified here as well
+const ARMNoneEabiPath: ?[] const u8 = null;
+
+
 pub fn build(b: *std.Build) anyerror!void {
     
     // ------------------
@@ -54,9 +58,33 @@ pub fn build(b: *std.Build) anyerror!void {
 
     // default arm-none-eabi includes
     lib.linkLibC();
-    lib.addSystemIncludePath(.{.path = "/usr/arm-none-eabi/include"});
 
-    const find = try b.findProgram(&.{"find"}, &.{});
+    // Standard libary headers may be in different locations on different platforms
+    const arm_header_location = blk: {
+        if (ARMNoneEabiPath) |path| {
+            break :blk path;
+        }
+
+        if (std.os.getenv("ARM_NONE_EABI_PATH")) |path| {
+            break :blk path;
+        }
+        
+        const unix_path = "/usr/arm-none-eabi/include";
+        if(std.fs.accessAbsolute(unix_path, .{})) |_| {
+            break :blk unix_path;
+        } else |err| err catch {};
+
+        break :blk error.StandardHeaderLocationNotSpecified;
+    } catch |err| {
+        err catch {};
+        std.log.err(
+            \\Could not determine ARM Toolchain include directory.
+            \\Please set the ARM_NONE_EABI_PATH environment variable with the correct path
+            \\or set the ARMNoneEabiPath variable at the top of build.zig 
+            , .{});
+        return;
+    };
+    lib.addSystemIncludePath(.{.path = arm_header_location});
 
     // find the board header
     const board_header = blk: {
@@ -91,24 +119,27 @@ pub fn build(b: *std.Build) anyerror!void {
     lib.addSystemIncludePath(.{.path = "build/generated/pico_base"});
 
     // PICO SDK includes    
-    const pico_sdk_src = try std.fmt.allocPrint(b.allocator, "{s}/src", .{pico_sdk_path});
-    //  -type d -name include"
-    // find all folders called include in the Pico SDK
-    const find_argv = [_][]const u8{find, pico_sdk_src, "-type", "d", "-name", "include"};
-    const directories = b.exec(&find_argv);
-    var splits = std.mem.splitSequence(u8, directories, "\n");
+    // Find all folders called include in the Pico SDK
+    {
+        const pico_sdk_src = try std.fmt.allocPrint(b.allocator, "{s}/src", .{pico_sdk_path});
+        var dir = try std.fs.cwd().openIterableDir(pico_sdk_src, .{
+            .no_follow = true, 
+        });
+        var walker = try dir.walk(b.allocator);
+        defer walker.deinit();
+        while (try walker.next()) |entry| {
+            if (std.mem.eql(u8,entry.basename,"include")) {
+                if (! std.mem.containsAtLeast(u8, entry.path, 1, "host")) {
+                    const pico_sdk_include = try std.fmt.allocPrint(b.allocator, "{s}\\src\\{s}", .{pico_sdk_path,entry.path});
+                    lib.addIncludePath(std.build.LazyPath{.path = pico_sdk_include});
+                }
+            }
+        }
+    }
+
 
     // Define UART or USB constant for headers
     lib.defineCMacroRaw(PicoStdlibDefine);
-
-    while (splits.next()) |include_dir| {
-        // filter host headers
-        if (std.mem.containsAtLeast(u8, include_dir, 1, "src/host")) {
-            continue;
-        }
-
-        lib.addIncludePath(std.build.LazyPath{.path = include_dir});
-    }
 
     // required for pico_w wifi
     lib.defineCMacroRaw("PICO_CYW43_ARCH_THREADSAFE_BACKGROUND");
@@ -133,7 +164,7 @@ pub fn build(b: *std.Build) anyerror!void {
 
     const uart_or_usb = if (StdioUsb) "-DSTDIO_USB=1" else "-DSTDIO_UART=1";
     const cmake_pico_sdk_path = b.fmt("-DPICO_SDK_PATH={s}", .{pico_sdk_path});
-    const cmake_argv = [_][]const u8{"cmake", "-B", "./build", "-S .", "-DPICO_BOARD=" ++ Board,cmake_pico_sdk_path ,uart_or_usb};
+    const cmake_argv = [_][]const u8{"cmake",  "-B", "./build", "-S .", "-DPICO_BOARD=" ++ Board,cmake_pico_sdk_path ,uart_or_usb};
     const cmake_step = b.addSystemCommand(&cmake_argv);
     cmake_step.step.dependOn(&install_step.step);
 
