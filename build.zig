@@ -40,7 +40,7 @@ pub fn build(b: *std.Build) anyerror!void {
     // if the sdk path contains the pico_sdk_init.cmake file then we know its correct
     const pico_sdk_path = 
         if(PicoSDKPath) |sdk_path| sdk_path
-        else std.os.getenv("PICO_SDK_PATH") 
+        else std.process.getEnvVarOwned(b.allocator, "PICO_SDK_PATH") catch null
             orelse {
                 std.log.err("The Pico SDK path must be set either through the PICO_SDK_PATH environment variable or at the top of build.zig.", .{});
                 return; 
@@ -65,7 +65,7 @@ pub fn build(b: *std.Build) anyerror!void {
             break :blk path;
         }
 
-        if (std.os.getenv("ARM_NONE_EABI_PATH")) |path| {
+        if (std.process.getEnvVarOwned(b.allocator, "ARM_NONE_EABI_PATH") catch null) |path| {
             break :blk path;
         }
         
@@ -168,10 +168,7 @@ pub fn build(b: *std.Build) anyerror!void {
     const cmake_step = b.addSystemCommand(&cmake_argv);
     cmake_step.step.dependOn(&install_step.step);
 
-    const threads = try std.Thread.getCpuCount();
-    const make_thread_arg = try std.fmt.allocPrint(b.allocator, "-j{d}", .{threads});
-
-    const make_argv = [_][]const u8{"make", "-C", "./build", make_thread_arg};
+    const make_argv = [_][]const u8{"cmake",  "--build", "./build", "--parallel"};
     const make_step = b.addSystemCommand(&make_argv);
     make_step.step.dependOn(&cmake_step.step);
 
