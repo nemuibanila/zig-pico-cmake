@@ -191,7 +191,7 @@ pub fn build(b: *std.Build) anyerror!void {
 
 // ------------------ Board support
 
-pub fn cpu_model_by_board(board: @Type(.enum_literal)) *const std.Target.Cpu.Model {
+pub fn cpu_model_by_board(board: @TypeOf(.enum_literal)) *const std.Target.Cpu.Model {
     return switch(board) {
         .pico, .pico_w => &std.Target.arm.cpu.cortex_m0plus,
         .pico2, .pico2_w => &std.Target.arm.cpu.cortex_m33,
@@ -199,7 +199,7 @@ pub fn cpu_model_by_board(board: @Type(.enum_literal)) *const std.Target.Cpu.Mod
     };
 }
 
-pub fn platform_by_board(board: @Type(.enum_literal)) @Type(.enum_literal) {
+pub fn platform_by_board(board: @TypeOf(.enum_literal)) @TypeOf(.enum_literal) {
     return switch(board) {
         .pico, .pico_w => .rp2040,
         .pico2, .pico2_w => .rp2350,
@@ -207,7 +207,7 @@ pub fn platform_by_board(board: @Type(.enum_literal)) @Type(.enum_literal) {
     };
 }
 
-pub fn define_platform_specific_macros(compile: *std.Build.Step.Compile, platform: @Type(.enum_literal)) void {
+pub fn define_platform_specific_macros(compile: *std.Build.Step.Compile, platform: @TypeOf(.enum_literal)) void {
     switch(platform) {
         .rp2040 => {
             compile.root_module.addCMacro("PICO_RP2040", "1");
